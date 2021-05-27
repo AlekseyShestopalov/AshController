@@ -54,9 +54,10 @@ class ASH_link {
 	int (*F_ParseAndRespSet) (unsigned char *inbuf, unsigned char *outbuf, unsigned char in, unsigned char on);
 	
  private:
-	int _OutPacket(const unsigned char cmd, const unsigned char *buf, size_t len);
-	int _ParceIncommingPacket();
-	int _ParceIncommingPacket_Get(byte cmd, byte in, byte outbuf, byte on);
+	int _OutPacket(byte cmd, byte *buf, size_t len);
+	int _ParseIncommingPacket();
+	int _ParseIncommingPacket_Get(byte cmd, byte in, byte *outbuf, byte on);
+	int _ParseIncommingPacket_Set(byte cmd, byte in, byte *outbuf, byte on);
 //	int _GetNextByte(unsigned char *b);
 //	int _ReadIncommingPacket(unsigned char *buf, int len);
 	

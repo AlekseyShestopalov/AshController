@@ -6,9 +6,9 @@ Aleksey Shestopalov ash******ov(dog)yandex.ru
 #include "Arduino.h"
 #include <EEPROM.h>
 
-const char DevCode[16] = "0-0-0";
-const char DevName[16] = "BaseController";
-const char DevLibVer[16] = "1.0.4 May 2021";
+byte DevCode[16] = "0-0-0";
+byte DevName[16] = "BaseController";
+byte DevLibVer[16] = "1.0.6 May 2021";
 
 //for debugging 
 //LED on port 13 - flash count times 
@@ -29,7 +29,7 @@ ASH_link::ASH_link(byte DN)
 	this->_DN = DN;
 	this->_sts = 0;
 	this->buflen = 0;
-	this->F_ParceAndRespSet = NULL;
+	this->F_ParseAndRespSet = NULL;
 }  
 
 // check incomming symbols. 
@@ -60,49 +60,54 @@ int ASH_link::CheckIncomming()
 		return 0; 	// continue when next call happen
 
 	// message compleate, start message parser
-	this->_ParceIncommingPacket();	
+	this->_ParseIncommingPacket();	
 	this->buflen = 0;
 	return 1; // parced
 }
 
-int ASH_link::_ParceIncommingPacket_Get(byte cmd, byte in, byte outbuf, byte on)
+// Parse Get command 
+// in - current parsing position in buffer
+int ASH_link::_ParseIncommingPacket_Get(byte cmd, byte in, byte *outbuf, byte on)
 {
 	byte cid, pid;
-	cid = this->buffer[n++];
-	pid = this->buffer[n++];
+	unsigned short val, val2;
+	unsigned short b0, b1, b2;
+	
+	cid = this->buffer[in++];
+	pid = this->buffer[in++];
 	outbuf[on++] = cid; 
 	outbuf[on++] = pid; 
-	if( cid == ASH_CMDGETCID_REGS ) //0x01 	  // регистры микроконтроллера
+	if( cid == ASH_CMDGETSET_REGS ) //0x01 	  // microcontroller registers
 	{
-		if( pid == 0x01 ) // цифровые регистры микроконтроллера
+		if( pid == 0x01 ) // digital register
 		{
 			outbuf[on++] = DDRD;  // The Port D Data Direction Register (регистр направления передачи данных порта D)
 			outbuf[on++] = PORTD; // The Port D Data Register (регистр данных порта D)
 			outbuf[on++] = DDRB;  // The Port B Data Direction Register (регистр направления передачи данных порта B)
 			outbuf[on++] = PORTB; // The Port B Data Register (регистр данных порта B)
 		}
-		else if( pid == 0x02 ) // аналоговые регистры микроконтроллера
+		else if( pid == 0x02 ) // analog registers state
 		{
 			outbuf[on++] = DDRC; // The Port C Data Direction Register (регистр направления передачи данных порта C)
 			outbuf[on++] = PORTC;// The Port C Data Register (регистр данных порта C)
 		}
-		else if( pid == 0x03 ) // отдельный аналоговый регистр микроконтроллера
+		else if( pid == 0x03 ) // one of analog registers value
 		{
-			b0 = this->buffer[n++]; // номер порта
+			b0 = this->buffer[in++]; // port number as 0...n
 			val = analogRead( A0+b0 );
 			outbuf[on++] = b0;  
 			outbuf[on++] = val & 0xFF;  
 			outbuf[on++] = (val>>8) & 0xFF;  
 		}
 	}
-	else if( cid == ASH_CMDGETCID_EEPROM )	// 0x02	- содержимое EEPROM
+	else if( cid == ASH_CMDGETSET_EEPROM )	// 0x02	- содержимое EEPROM
 	{
 		b0 = pid; 		// номер первой ячейки 
-		b1 = 0; n++; //this->buffer[n++];  // номер первой ячейки
+		b1 = 0; in++; //this->buffer[n++];  // first cell number
 		val = (b1<<8)+b0;
-		b0 = this->buffer[n++]; // количество ячеек
-		b1 = this->buffer[n++]; // количество ячеек
-		val2 =(b1<<8)+b0;
+		b0 = this->buffer[in++]; // cells count
+		b1 = this->buffer[in++]; // cells count
+		val2 =(b1<<8)+b0;		// cells count
 		
 		outbuf[on++] = b0;
 		outbuf[on++] = b1;
@@ -111,38 +116,41 @@ int ASH_link::_ParceIncommingPacket_Get(byte cmd, byte in, byte outbuf, byte on)
 			outbuf[on++] = EEPROM[val+i];				
 		}
 	}
-	this->_OutPacket( cmd, outbuf, on);  // отправляем ответ устройству
+	this->_OutPacket( cmd, outbuf, on);  // reply
 	
 	return 0;
 }
 
-int ASH_link::_ParceIncommingPacket_Get(byte cmd, byte in, byte outbuf, byte on)
+// Parse Set command 
+int ASH_link::_ParseIncommingPacket_Set(byte cmd, byte in, byte *outbuf, byte on)
 {
 	byte cid, pid;
+	unsigned short b0, b1, b2;
 
-	cid = this->buffer[n++];
-	pid = this->buffer[n++];
-	b0 = this->buffer[n++];
-	b1 = this->buffer[n++];
+	cid = this->buffer[in++];
+	pid = this->buffer[in++];
+	b0 = this->buffer[in++];
+	b1 = this->buffer[in++];
 	outbuf[on++] = cid; 
 	outbuf[on++] = pid; 
-	if( cid == 0x01 )		// регистры микроконтроллера
+	if( cid == 0x01 )		// registers
 	{
-	if( pid == 0x03 ) // цифровые регистры микроконтроллера, запись значения
-	  digitalWrite( b0, b1);        
-	else if( pid == 0x04 ) // цифровые регистры микроконтроллера, запись направления
-	  pinMode( b0, b1==0?INPUT:OUTPUT);        
+		if( pid == 0x03 ) // digital registers, value
+		  digitalWrite( b0, b1);        
+		else if( pid == 0x04 ) // dgital registers, directions
+		  pinMode( b0, b1==0?INPUT:OUTPUT);        
 	}
-	this->_OutPacket( cmd, outbuf, on);  // отправляем ответ устройству
+	this->_OutPacket( cmd, outbuf, on);  // reply
+	
+	return 0;
 }
 
-// packet parser
-int ASH_link::_ParceIncommingPacket()
+// incomming packet parser
+int ASH_link::_ParseIncommingPacket()
 {
   byte cnt, dn, cmd, n=1, on=0;
-  unsigned short b0, b1, b2;
   byte outbuf[128];
-  unsigned short val, val2;
+
   cnt = this->buffer[n++];
   dn  = this->buffer[n++];
 //_flash13(1, 800);
@@ -157,32 +165,33 @@ int ASH_link::_ParceIncommingPacket()
   {
     case ASH_CMD_GETCODE: 	//0x00
 	//flash13(2, 200);
-		this->_OutPacket( cmd, (const unsigned char*)DevCode, strlen(DevCode));  // reply
+		this->_OutPacket( cmd, DevCode, strlen((const char*)DevCode));  // reply
     break;
     case ASH_CMD_GETNAME: 	//0x01
 	//_flash13(4, 200);
-		this->_OutPacket( cmd, (const unsigned char*)DevName, strlen(DevName));  // reply
+		this->_OutPacket( cmd, DevName, strlen((const char*)DevName));  // reply
     break;
     case ASH_CMD_GETCONFIG: //0x02
-		this->_OutPacket( cmd, (const unsigned char*)DevLibVer, strlen(DevLibVer));  // reply
+		this->_OutPacket( cmd, DevLibVer, strlen((const char*)DevLibVer));  // reply
     break;
-    case ASH_CMD_GET: // 0x11 - чтение данных и состояния
-		this->_ParceIncommingPacket_Get();
+    case ASH_CMD_GET: // 0x11 - read data and state
+		this->_ParseIncommingPacket_Get(cmd, n, outbuf, on);
     break;
-    case ASH_CMD_SET: // 0x10 - запись данных и состояния
+    case ASH_CMD_SET: // 0x10 - write date
+		this->_ParseIncommingPacket_Set(cmd, n, outbuf, on);
     break;
-    case ASH_CMD_GETSTATE: //0x04  -  Запрос байта статуса устройства.
-      this->_OutPacket( cmd, outbuf, on);  // отправляем ответ устройству
+    case ASH_CMD_GETSTATE: //0x04  -  ask about current state
+      this->_OutPacket( cmd, outbuf, on);  // reply
     break;
 	default:	// unknown command
-	case ASH_CMD_UD: // передаем устройству на дальнейший разбор самостоятельно
+	case ASH_CMD_UD: // users command extention
 //		_flash13(1, 200);
 		if( this->F_ParseAndRespSet )
 			on = (*this->F_ParseAndRespSet) (this->buffer+n-1, outbuf, 0, on);
-		this->_OutPacket( cmd, outbuf, on);  // отправляем ответ устройству
+		this->_OutPacket( cmd, outbuf, on);  // reply
 	break;
 //	default:	// unknown command
-//     this->_OutPacket( cmd, outbuf, on);  // отправляем ответ устройству
+//     this->_OutPacket( cmd, outbuf, on);  // reply
 //	return -1;
   }
   return 0;
@@ -190,7 +199,7 @@ int ASH_link::_ParceIncommingPacket()
 
 // reply len bytes to PC
 // wraps bytes with the prefix and checksum required by the protocol
-int ASH_link::_OutPacket(const unsigned char cmd, const unsigned char *buf, size_t len)
+int ASH_link::_OutPacket(byte cmd, byte *buf, size_t len)
 {
   byte outbuf[256];
   byte checksumm=0;
@@ -220,9 +229,9 @@ int ASH_link::_OutPacket(const unsigned char cmd, const unsigned char *buf, size
 // returns new value of _sts
 byte ASH_link::SetStateBit(unsigned char bit, unsigned char val)
 {
-	if(val) // установить
+	if(val) // set 1
 		this->_sts |= bit;	
-	else	// сбросить
+	else	// set 0
 		this->_sts &= ~bit;	
 		
 	return this->_sts;
