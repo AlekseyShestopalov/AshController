@@ -1,7 +1,8 @@
 # AshController  (Arduino Simple Host Controller)
 Class for Arduino-PC communication.
-==============================================================================
-Realise a simple communication bytes protocol throw RS234, RS485 or USB converters to RS232
+============================================================
+Realise a simple communication bytes protocol throw RS234, 
+RS485 or USB converters to RS232
 
 PC->Arduino request:
 <RP><CNT><DN><CMD>[<CMD_DATA>]<CS>
@@ -12,7 +13,7 @@ PC->Arduino request:
   .... command data
 <CS> - checsumm
   
-PC->Arduino response:
+Arduino->PC  response:
 <AP><CNT><DN><CMD><STS>[<CMD_DATA>]<CS>
 <RP> - prefix, everywhere "+"
 <CNT> - command length - bytes count, started from <DN> to <CS>
@@ -23,13 +24,14 @@ PC->Arduino response:
 <CS> - checsumm
   
 
-==============================================================================
+================================================================
  
-usage 1: this code is sufficient to control the digital and analog pins of the Arduino from the PC
+usage 1: this code is sufficient to control the digital and 
+  analog pins of the Arduino from the PC
 
-==============================================================================
+===============================================================
+
 #include <ASH_link.h>
-
 #define DN 22
 
 ASH_link *al;
@@ -44,11 +46,13 @@ void loop()
   al->CheckIncomming();  
 }
 
-==============================================================================
+===========================================================
 
-usage 2: example of controlling a servomotor throw AshController from PC 
+usage 2: example of controlling a servomotor 
+  throw AshController from PC 
 
-==============================================================================
+===========================================================
+
 #include <ASH_link.h>
 #include <Servo.h>
 
