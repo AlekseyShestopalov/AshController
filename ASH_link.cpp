@@ -1,17 +1,16 @@
-/*
-ASH_link.h - Class for Arduino for communication with PC
-Aleksey Shestopalov ash******ov(dog)yandex.ru
-*/
+// ASH_link.h - Class for Arduino for communication with PC
+// Aleksey Shestopalov ash******ov(dog)yandex.ru
+
 #include "ASH_link.h"
 #include "Arduino.h"
 #include <EEPROM.h>
 
 byte DevCode[16] = "0-0-0";
 byte DevName[16] = "BaseController";
-byte DevLibVer[16] = "1.0.6 May 2021";
+byte DevLibVer[16] = "1.0.8 May 2021";
 
-//for debugging 
-//LED on port 13 - flash count times 
+// for debugging 
+// LED on port 13 - flash count times 
 int _flash13(int count, int delay_ms)
 {
   for( int i=0; i<count; i++ )
@@ -63,6 +62,19 @@ int ASH_link::CheckIncomming()
 	this->_ParseIncommingPacket();	
 	this->buflen = 0;
 	return 1; // parced
+}
+
+// Check checksumm
+int ASH_link::_CheckCheckSumm(void)
+{
+  byte checksumm = 0;
+ 
+  for(int i=1; i<this->buflen; i++)
+  {
+	  checksumm += this->buffer[i];  
+  }
+  
+  return checksumm;	// 0 - 0K
 }
 
 // Parse Get command 
@@ -148,53 +160,60 @@ int ASH_link::_ParseIncommingPacket_Set(byte cmd, byte in, byte *outbuf, byte on
 // incomming packet parser
 int ASH_link::_ParseIncommingPacket()
 {
-  byte cnt, dn, cmd, n=1, on=0;
-  byte outbuf[128];
+	byte cnt, dn, cmd, n=1, on=0;
+	byte outbuf[128];
+	
+	// check checksumm
+	if( 0 != this->_CheckCheckSumm() )
+	{
+		outbuf[on++] = ASH_ERR_CHECKSUMM;
+		return this->_OutPacket( cmd | ASH_ERROR_CMD_FLAG, outbuf, on);  // reply		
+	}
+	
+	cnt = this->buffer[n++];
+	dn  = this->buffer[n++];
+	//_flash13(1, 800);
+	if( dn != this->_DN ) // wrong device number, message should be ignored
+	{
+		//	_flash13(2, 400);
+		return -1;
+	}
 
-  cnt = this->buffer[n++];
-  dn  = this->buffer[n++];
-//_flash13(1, 800);
-  if( dn != this->_DN ) // wrong device number, message should be ignored
-  {
-//	_flash13(2, 400);
-	return -1;
-  }
-
-  cmd = this->buffer[n++];
-  switch(cmd)      
-  {
-    case ASH_CMD_GETCODE: 	//0x00
-	//flash13(2, 200);
-		this->_OutPacket( cmd, DevCode, strlen((const char*)DevCode));  // reply
-    break;
-    case ASH_CMD_GETNAME: 	//0x01
-	//_flash13(4, 200);
-		this->_OutPacket( cmd, DevName, strlen((const char*)DevName));  // reply
-    break;
-    case ASH_CMD_GETCONFIG: //0x02
-		this->_OutPacket( cmd, DevLibVer, strlen((const char*)DevLibVer));  // reply
-    break;
-    case ASH_CMD_GET: // 0x11 - read data and state
-		this->_ParseIncommingPacket_Get(cmd, n, outbuf, on);
-    break;
-    case ASH_CMD_SET: // 0x10 - write date
-		this->_ParseIncommingPacket_Set(cmd, n, outbuf, on);
-    break;
-    case ASH_CMD_GETSTATE: //0x04  -  ask about current state
-      this->_OutPacket( cmd, outbuf, on);  // reply
-    break;
-	default:	// unknown command
-	case ASH_CMD_UD: // users command extention
-//		_flash13(1, 200);
-		if( this->F_ParseAndRespSet )
-			on = (*this->F_ParseAndRespSet) (this->buffer+n-1, outbuf, 0, on);
-		this->_OutPacket( cmd, outbuf, on);  // reply
-	break;
-//	default:	// unknown command
-//     this->_OutPacket( cmd, outbuf, on);  // reply
-//	return -1;
-  }
-  return 0;
+	cmd = this->buffer[n++];
+	switch(cmd)      
+	{
+		case ASH_CMD_GETCODE: 	//0x00
+		//flash13(2, 200);
+			this->_OutPacket( cmd, DevCode, strlen((const char*)DevCode));  // reply
+		break;
+		case ASH_CMD_GETNAME: 	//0x01
+		//_flash13(4, 200);
+			this->_OutPacket( cmd, DevName, strlen((const char*)DevName));  // reply
+		break;
+		case ASH_CMD_GETCONFIG: //0x02
+			this->_OutPacket( cmd, DevLibVer, strlen((const char*)DevLibVer));  // reply
+		break;
+		case ASH_CMD_GET: // 0x11 - read data and state
+			this->_ParseIncommingPacket_Get(cmd, n, outbuf, on);
+		break;
+		case ASH_CMD_SET: // 0x10 - write date
+			this->_ParseIncommingPacket_Set(cmd, n, outbuf, on);
+		break;
+		case ASH_CMD_GETSTATE: //0x04  -  ask about current state
+		  this->_OutPacket( cmd, outbuf, on);  // reply
+		break;
+		case ASH_CMD_UD: // users command extention
+		default:	// unknown command
+		//		_flash13(1, 200);
+			if( this->F_ParseAndRespSet )
+				on = (*this->F_ParseAndRespSet) (this->buffer+n-1, outbuf, 0, on);
+			this->_OutPacket( cmd, outbuf, on);  // reply
+		break;
+		//	default:	// unknown command
+		//     this->_OutPacket( cmd, outbuf, on);  // reply
+		//	return -1;
+	} // switch cmd
+	return 0;
 }
 
 // reply len bytes to PC
@@ -250,7 +269,7 @@ void ASH_link::SetParser(
 	this->F_ParseAndRespSet = ParseAndRespSet;
 }
  
- // next byte reads with timeount
+// next byte reads with timeount
 /*
 int ASH_link::_GetNextByte(unsigned char *b)
 {
